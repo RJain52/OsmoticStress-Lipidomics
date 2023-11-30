@@ -5,57 +5,52 @@ format: html
 editor: visual
 ---
 
-# Data analysis
+# Load packages and data
 
 Data is in pmol/million cells
 
-```{r}
+```{r, warning=FALSE, message=FALSE}
+# Required packages
 if(!require(tidyverse)){install.packages("tidyverse")}
 if(!require(Cairo)){install.packages("Cairo")}
 if(!require(ggsci)){install.packages("ggsci")}
 if(!require(scales)){install.packages("scales")}
 if(!require(ggpubr)){install.packages("ggpubr")}
-if(!require(ggrepel)){install.packages("ggrepel")}
-if(!require(VennDiagram)){install.packages("VennDiagram")}
 if(!require(rstatix)){install.packages("rstatix")}
 if(!require(ggbreak)){install.packages("ggbreak")}
-library(factoextra)
-list.files("output")
-lipid_data <- read_csv("output/2022_0610_bact_pmol_milCells.csv")
+if(!require(factoextra)){install.packages("factoextra")}
 
-met_data <- read_csv("output/2022_0926_Metabolomics_final.csv")
+# Load data
+lipid_data <- read_csv("lipidomics_data.csv")
 
-mydata <- lipid_data |>
-  filter(!`Sample Number` %in% c(3, 7, 11)
-         )
-
-theme_set(theme_bw(base_size = 16, base_family = "Arial"))
-mypal <- pal_startrek('uniform', alpha = 1)(7)
-show_col(mypal)
+# Palettes used in the analysis
 mypal_bar <- pal_igv('default', alpha = 1)(9)
-show_col(mypal_bar)
 mypal_new <- c("#00AFBB",  "#FC4E07", "green4")
-
-STable1 <- mydata |> select(`Sample Number`, Condition, 10:159)
-#write_csv(STable1, file = "output/STable1.csv")
 ```
 
 ## PCA
 
 ```{r}
-mdat <- mydata |>
-  select(`Sample Number`, Condition, 10:ncol(lipid_data)
-         ) 
+mdat <- lipid_data
 
+# Replace lipids not detected in certain samples with 0
 mdat[is.na(mdat)] <- 0
 
+# Perform PCA analysis
 res.pca <- prcomp(mdat[,-c(1,2)],
              center = TRUE,
             scale. = TRUE)
+
+# Information in res.pca
 attributes(res.pca)
 
+# Loadings for all lipids
 print(res.pca)
+
+# Scree plot
 fviz_eig(res.pca)
+
+# Plot PC1 and PC2
 p0 <- fviz_pca_ind(res.pca,
                    col.ind = mdat$Condition,
                    palette = c("#00AFBB",  "#FC4E07", "green4"),
@@ -75,20 +70,27 @@ p0 <- fviz_pca_ind(res.pca,
         legend.position = "bottom"
         )
 
+# Visualize PCA plot
 p0
 
-ggsave(filename="output/figures/Fig 2/PCA_lipid.pdf", 
+# Save PCA plot
+ggsave(filename="output/PCA.pdf", 
        plot = p0, 
        device = "pdf",
        width = 14, height = 12,
        units = "cm",
        dpi = 600)
 
+rm(p0, mdat, res.pca)
 ```
 
 ## Class sums
-
+Sum lipid species belonging to the lipid classes present in the dataset.
 ```{r}
+# Copy lipid data to new data frame
+mydata <- lipid_data
+
+# Calculate lipid class sums and create variables for them
 mydata$`Total CL` <- rowSums(mydata[,grep('CL', colnames(mydata))], na.rm = T)
 mydata$`Total DG` <- rowSums(mydata[,grep('\\bDG\\b', colnames(mydata))], na.rm = T)
 mydata$`Total FFA` <- rowSums(mydata[,grep('FA', colnames(mydata))], na.rm = T)  
@@ -103,24 +105,29 @@ mydata$`Total PG` <- rowSums(mydata[,grep('\\bPG\\b', colnames(mydata))], na.rm 
 mydata$`Total PMeOH` <- rowSums(mydata[,grep('\\bPMeOH\\b', colnames(mydata))], na.rm = T) 
 mydata$`Total TG` <- rowSums(mydata[,grep('TG', colnames(mydata))], na.rm = T)
 
-mydata$`Total Lipid` <- rowSums(mydata[,160:172], na.rm = T)
+# Calculate total quantified lipids by summing all classes
+mydata$`Total Lipid` <- rowSums(mydata[,153:165], na.rm = T)
 ```
 
 ## Total Lipid Bar Graphs
 
 ```{r}
-mydata1 <- mydata[,c(5, 166, 168, 170)] # High Abundance
+# Subset total lipid column
+mdat <- mydata |>
+  select(Condition, `Total Lipid`)
 
-mydata1 <- mydata[,c(5, 160, 162, 171:172)] # Medium Abundance
+# Make Condition a factor and set order
+mdat$Condition <- factor(mdat$Condition, 
+                            levels = c("0.28 OsM", "1.1 OsM", "1.1 OsM + 1mM GB")
+                            )
 
-mydata1 <- mydata[,c(5, 161, 163:165, 167, 169)] # Low Abundance
+# Make data long
+mdat2 <- mdat |>
+  pivot_longer(-Condition,
+               names_to = "Lipid",
+               values_to = "value")
 
-mydata1 <- mydata[,c(5, ncol(mydata))] # Total
-
-mydata1$Condition <- factor(mydata1$Condition, levels = c("0.28 OsM", "0.5 OsM", "0.5 OsM + 1mM GB"))
-mdat2 <- reshape2::melt(mydata1, id="Condition")
-colnames(mdat2)[2] <- "Lipid"
-
+# Plot total lipids
 p0 <- ggbarplot(mdat2, x = "Condition", y = "value", 
             add = c("mean_sd", "dotplot"),
             color = "Condition",
@@ -136,34 +143,39 @@ p0 <- ggbarplot(mdat2, x = "Condition", y = "value",
                                                  )
                      )
 
+# Edit aesthetics
 p1 <- ggpar(p0, palette = mypal_new, 
             legend.title = "Condition", 
             title = "Total Lipids",  
-            xlab = "Condition", ylab = "pmol lipid/1e8 cells") +
+            xlab = "Condition", 
+            ylab = "pmol lipid/1e8 cells") +
   scale_color_manual(values = c("black", "black", "black")
                      )
 
-
+# Perform pairwise t-tests
 stat.test <- mdat2 %>%
   group_by(Lipid) %>%
   na.omit() %>%
   t_test(value ~ Condition) %>%
   adjust_pvalue(method = "none") %>%
   add_significance("p")
-  
 stat.test$p.adj.signif <- stat.test$p.signif
+
+# Generate x and y coordinates to plot significance
 stat.test <- stat.test %>%
   na.omit() %>%
   add_xy_position(fun = "max", "Condition",
                   dodge = 0.8,
                   step.increase = 0.075) 
 
+# Overlay results of t-test
 p2 <- p1 +
   stat_pvalue_manual(
     stat.test, 
     label = "p.signif",
     tip.length = 0.02, 
-    hide.ns = T
+    hide.ns = T,
+    size = 8
     ) +
   theme_bw(base_size = 14,
            base_family = "sans",
@@ -173,60 +185,65 @@ p2 <- p1 +
         axis.line = element_line(linetype = 0),
         legend.position = "bottom"
         )
+
 p2
 
-ggsave(filename="output/figures/Fig 2/total_lipid.pdf", 
+ggsave(filename="output/total_lipid.pdf", 
        plot = p2, 
        device = "pdf",
        width = 14, height = 12,
        units = "cm",
        dpi = 600)
 
-
-#CairoPDF(file = "Final Report/output/figures/Total_lipid.pdf", 
- #          height = 8, width = 12)  print(p2)
-#dev.off()
+rm(mdat, mdat2, p0, p1, p2, stat.test)
 ```
 
 ## Lipid Class
-
-Percent of total
-
+Calculate percent contribution of lipid classes to total lipids in the conditions.
 ```{r}
-mydata1 <- mydata[,c(2, 5, 160:ncol(mydata))]
+# Subset class data
+mdat <- mydata |>
+  select(`Sample Number`, Condition, 
+         `Total CL`:`Total Lipid`)
 
-mydata1$Condition <- factor(mydata1$Condition,
-                            levels = c("0.28 OsM", "0.5 OsM", "0.5 OsM + 1mM GB")
+mdat$Condition <- factor(mdat$Condition,
+                            levels = c("0.28 OsM", "1.1 OsM", "1.1 OsM + 1mM GB")
                             )
 
-mdat2 <- reshape2::melt(mydata1, id=c("Sample Number", "Condition"))
-colnames(mdat2)[3] <- "Lipid"
+mdat2 <- mdat |>
+  pivot_longer(-c(`Sample Number`, Condition),
+               names_to = "Lipid",
+               values_to = "value")
 
+# Create variable for % contribution of each class to total lipid pool
 mdat2 <- mdat2 |>
   group_by(`Sample Number`, Condition) |>
   mutate(norm_val = 100*value/value[Lipid == "Total Lipid"])
 
+# Remove total lipid
 mdat2 <- mdat2 |>
   filter(!Lipid == "Total Lipid")
 
+# Create two 'Class' variables for further editing
 mdat2$Class <- as.character(mdat2$Lipid)
-mdat2$Class2 <- as.character(mdat2$Lipid)
 
-mdat2$Class2 <- ifelse(mdat2$norm_val < 1,
+# Change Class variable to 'Other' for any classes with less than 1% contribution
+mdat2$Class <- ifelse(mdat2$norm_val < 1,
                       "Other",
-                      mdat2$Class2)
+                      mdat2$Class)
 
-mdat2$Class2 <- ifelse(mdat2$Class2 == "Total FFA",
+# Also change other classes by name to 'Other'
+mdat2$Class <- ifelse(mdat2$Class == "Total FFA",
                       "Other",
-                      mdat2$Class2)
+                      mdat2$Class)
 
-mdat2$Class2 <- ifelse(mdat2$Class2 == "Total PMeOH",
+mdat2$Class <- ifelse(mdat2$Class == "Total PMeOH",
                       "Other",
-                      mdat2$Class2)
+                      mdat2$Class)
 
-mdat2$Class2 <- ifelse(mdat2$Class2 == "Total CL",
+mdat2$Class <- ifelse(mdat2$Class == "Total CL",
                       "Other",
-                      mdat2$Class2)
+                      mdat2$Class)
 
 stat.test <- mdat2 %>%
   group_by(Lipid) %>%
@@ -235,48 +252,50 @@ stat.test <- mdat2 %>%
   adjust_pvalue(method = "none") %>%
   add_significance("p")
 
-mdat2_low <- mdat2 |>
-  filter(Class2 == "Other")
-
+# Sum all lipid classes in 'Other' 
 mdat2 <- mdat2 |>
-  group_by(`Sample Number`, Class2) |>
+  group_by(`Sample Number`, Class) |>
   mutate(norm_val_new = sum(norm_val)
          ) |>
   ungroup()
 
+# Subset out the major lipid classes (PA, PE and PG) and Other (CL here)
 mdat2 <- mdat2 |>
-  filter(Class %in% c("Total CL", "Total PA",
+  filter(Lipid %in% c("Total CL", "Total PA",
                       "Total PG", "Total PE")
          )
 
-
+# Order to plot classes 
 mdat2 <- mdat2 |>
-  mutate(Class2 = factor(Class2,
+  mutate(Class = factor(Class,
                         levels = c("Other", "Total PA","Total PG",
                                    "Total PE"
                                   )
                         )
          ) 
 
+# Calculate mean and sd of % contribution of each class
 mdat2 <- mdat2 |>
-  group_by(Condition, Class2) |>
+  group_by(Condition, Class) |>
   summarise(mean_norm = mean(norm_val_new),
             sd_norm = sd(norm_val_new),
             .groups = 'drop')
   
-
+# Generate coordinates for error bars
 error_bars = mdat2 |>
-  arrange(Condition, desc(Class2)) |>
-  # for each cyl group, calculate new value by cumulative sum
-  group_by(Condition) %>%
-  mutate(mean_norm_new = cumsum(mean_norm)) %>%
+  arrange(Condition, desc(Class)) |>
+  # for each group, calculate new value by cumulative sum
+  group_by(Condition) |>
+  mutate(mean_norm_new = cumsum(mean_norm)) |>
   ungroup()
 
 # plot
 ggplot(mdat2, aes(x = Condition, y = mean_norm)) +
-  geom_bar(stat = 'identity', aes(fill = Class2)) +
+  geom_bar(stat = 'identity', aes(fill = Class)) +
   geom_errorbar(data = error_bars,
-                aes(x = Condition, ymax = mean_norm_new + sd_norm, ymin = mean_norm_new - sd_norm), 
+                aes(x = Condition,
+                    ymax = mean_norm_new + sd_norm,
+                    ymin = mean_norm_new - sd_norm), 
                 width = 0.2) +
   scale_fill_manual(values = mypal_bar[c(6,2,5,3)]) +
   scale_y_continuous(limits = c(0, 110),
@@ -292,97 +311,53 @@ ggplot(mdat2, aes(x = Condition, y = mean_norm)) +
         axis.line = element_line(linetype = 0),
         legend.position = "right"
         )
-
-ggsave(filename="output/figures/Fig 2/Lipid_class_v2.pdf", 
+# Export plot
+ggsave(filename="output/Lipid_class.pdf", 
        plot = last_plot(), 
        device = "pdf",
        width = 12, height = 12,
        units = "cm",
        dpi = 600)
 
-write_csv(mdat2, file = "figures/STable2_sum.csv")
-write_csv(stat.test, file = "figures/STable2_pval.csv")
+# Export data on all lipid classes and t-tests
+write_csv(mdat2, file = "output/STable2_sum.csv")
+write_csv(stat.test, file = "output/STable2_pval.csv")
+
+rm(mdat, mdat2, stat.test, error_bars)
 ```
 
-### Lipid Class Pie Charts
-
-```{r}
-mydata1 <- mydata[,c(1, 5, 160:(ncol(mydata)-1))]
-
-mdat2 <- reshape2::melt(mydata1, id = c("Name", "Condition"))
-
-# Sum up acyl chain values
-mdat3 <- aggregate(mdat2$value, by=list(Condition = mdat2$Condition, 
-                                        lipid = mdat2$variable), FUN=mean)
-
-
-X <- mdat3[mdat3$Condition == "0.28 OsM",]
-
-X$x <- 100*round(X$x/sum(X$x),3)
-
-X$lipid_cat <- ifelse(X$x > 0.20, X$lipid, "Other")
-X$lipid_cat <- ifelse(X$lipid_cat == "Other", "Other", as.character(X$lipid))
-
-X2 <- aggregate(X$x, by = list(Condition = X$Condition, 
-                               cat = X$lipid_cat), FUN = sum)
-
-pie_lab <- paste0(X2$cat, " (", X2$x, "%)")
-pie(X2$x, labels = pie_lab, 
-    main = "0.28 OsM",
-    col = mypal, border="black",
-    radius = .75, cex = 0.6)
-
-
-
-CairoPDF(file = "Final Report/output/figures/028_pie.pdf", 
-         height = 8, width = 10)
-  pie(X2$x, labels = pie_lab, 
-    main = "0.28 OsM",
-    col = mypal, border="black",
-    radius = .75, cex = 0.6)
-dev.off()
-```
 
 ## Volcano plots
 
 ```{r}
-mydata <- lipid_data |>
-  filter(!`Sample Number` %in% c(3, 7, 11)
-         )
+# Working dataset
+Z <- lipid_data
 
-# Working dataset with key grouping variables and lipids
-Z <- mydata |>
-  select(`Sample Number`,
-         Condition, 10:ncol(mydata))
-
-# Make sure all 0 values are NA
+# Change all 0 values to NA
 Z[Z==0] <- NA
 
-# log2 transform lipid data
 Z <- Z |> 
   pivot_longer(-c(`Sample Number`, Condition),
                names_to = "Lipid",
                values_to = "signal")
 
-
-
-# Generate data to make volcano plot
+# Select Conditions to compare
 Z <- Z |>
-  filter(Condition %in% c("0.28 OsM", "0.5 OsM + 1mM GB")
+  filter(Condition %in% c("0.28 OsM", "1.1 OsM + 1mM GB")  # Change to 1.1 OsM for other volcano plot
          )
-# This code performs the calculations within the group specified
+
+# Calculate fold changes; edit summarise function to select correct Conditions
 volcano <- Z |> 
   drop_na() |>
   group_by(Lipid) |>      # retain factor
-  summarise(FC = mean(signal[Condition == "0.5 OsM + 1mM GB"])/mean(signal[Condition == "0.28 OsM"])
+  summarise(FC = mean(signal[Condition == "1.1 OsM + 1mM GB"])/mean(signal[Condition == "0.28 OsM"])
             ) |>
   ungroup()
 
-# Calculate p-values for high versus normal BP for each lipid, within each group
+# Calculate p-values for for each lipid, within each group
 stat.test <- Z |>
-  group_by(Lipid) |>          # Grouping variables as above
-  t_test(signal ~ Condition) |>       # significance test (can also do wilcox_test)
-  #adjust_pvalue(method = "fdr") |>  # multiple comparison adjustment (adjusted values in new column)
+  group_by(Lipid) |>                # Grouping variables as above
+  t_test(signal ~ Condition) |>     # significance test (can also do wilcox_test)
   mutate(log10_p = -log10(p)) |>    # transform p-values for plotting
   ungroup()
 
@@ -391,7 +366,7 @@ volcano <- left_join(volcano, stat.test,
                      by = c("Lipid")
                      )
 
-# Create binary [factor] variable for lipid change based on FDR p-value and direction of change
+# Create [factor] variable for lipid change based on p-value and direction of change
 volcano$signif <- ifelse(volcano$p < 0.051 & volcano$FC > 1.0, 
                          "Increased", "p>0.051")
 
@@ -399,20 +374,23 @@ volcano$signif <- ifelse(volcano$p < 0.051 & volcano$FC < 1.0,
                          "Decreased", volcano$signif)
 
 volcano$signif <- factor(volcano$signif,
-                         levels = c("p>0.051", "Increased", "Decreased"))
+                         levels = c("p>0.051", "Increased", "Decreased")
+                         )
 
+# Create column to label significantly altered lipids
 volcano$delabel <- ifelse(volcano$signif != "p>0.051",
                           paste0(volcano$Lipid), 
                           NA)
 
+# Reduce names to represent lipid classes
 volcano$delabel <- gsub(" .*","", volcano$delabel)
 volcano$delabel <- factor(volcano$delabel)
 
+# Transform fold change for plotting
 volcano$FC <- log2(volcano$FC)
 
-  
-# Create scatterplot with fold change on x-axis, p-value on y-axis, and FDR adjusted direction by color
-# See previous sections for explanation on ggplot options
+# Create scatterplot with fold change on x-axis, p-value on y-axis
+# Shade significantly altered lipids by lipid class
 p0 <- volcano |>
   ggplot(aes(x=FC, y = log10_p, 
              col = delabel
@@ -425,30 +403,24 @@ p0 <- volcano |>
   scale_x_continuous(limits = c(min(volcano$FC)*1.5, 
                                 max(volcano$FC)*1.5)
                      ) +
-  geom_hline(yintercept = 1.301,      # dashed line for p=0.05
+  geom_hline(yintercept = 1.301,            # dashed line for p=0.05
              linetype = "dashed",
              linewidth = 0.5
              ) +
   annotate("text", label = "p=0.05",
            x = 1.05*max(volcano$FC), 
-           y = 1.15,                         # text label for line signifying p-value
+           y = 1.15,                         # text label for line signifying p-value = 0.05
            size = 2.5,      
            vjust = -0.25,
            colour = "black") +
-  #geom_text_repel(aes(label=delabel), color = "black", 
-  #                      segment.color = "#000000B2",
-  #                      min.segment.length = 0, segment.size = 0.2,
-  #                      size = 2, fontface = "bold", family = "sans",
-  #                      box.padding = 0.5, max.overlaps = Inf) +
   scale_color_manual(values=mypal_bar[c(4, 2, 7, 6, 3, 5, 8)], 
-                           name = "Lipid Class",                   # legend title
+                           name = "Lipid Class",                 # legend title
                            breaks = c("CL", "DG", "HBMP", 
                                      "PA", "PE", 
-                                      "PG", "TG")#,   # factor levels in volcano
-                           #labels = c("p>0.051", "Increased", "Decreased")
-                     ) + # desired name in legend
+                                      "PG", "TG")
+                     ) +                                         # desired name in legend
   ggtitle("High vs. Normal") +
-  xlab("log2(Fold change [0.5 OsM + 1mM GB/0.28 OsM])") +
+  xlab("log2(Fold change [1.1 OsM + 1mM GB/0.28 OsM])") +        # Edit based on groups
   ylab("-log10(p-value)") +
   theme_bw(base_size = 14,
            base_family = "sans",
@@ -461,178 +433,43 @@ p0 <- volcano |>
 p0
 
 
-ggsave(filename="output/figures/Fig 3/volcano_high_GB_v2.pdf", 
+ggsave(filename="output/volcano_high_GB.pdf", 
        plot = p0, 
        device = "pdf",
        width = 14, height = 16,
        units = "cm",
        dpi = 600)
 
-write_csv(volcano, file = "output/figures/Fig 3/volcano_high_GB.csv")
+write_csv(volcano, file = "output/volcano_high_GB.csv")
 
-
-########## For 0.5 volcano ##########
+# Use the below code in the scale_color_manual depending on groups being plotted
+# This allows for lipid class shading to be similar between plots
+########## For 1.1 volcano ##########
 #values=mypal_bar[c(4, 2, 6, 7, 8, 3, 5, 1)], 
-#                           name = "Lipid Class",                   # legend title
+#                           name = "Lipid Class",                  
 #                           breaks = c("CL", "DG", "FA", 
 #                                      "HBMP", "PC", "PE", 
 #                                      "PG", "PMeOH")
 
-######### For 0.5mM + 1mM GB ########
+######### For 1.1mM + 1mM GB ########
 #values=mypal_bar[c(4, 2, 7, 6, 3, 5, 8)], 
-#                           name = "Lipid Class",                   # legend title
+#                           name = "Lipid Class",                   
 #                           breaks = c("CL", "DG", "HBMP", 
 #                                      "PA", "PE", 
 #                                      "PG", "TG")
+
+rm(Z, stat.test, volcano, p0)
 ```
 
-## Venn Diagrams
 
+## Plot lipid species within class
+PE lipid species calculations. Edit for other lipid classes as needed. 
 ```{r}
-high_1mM <- volcano |> 
-  filter(signif == "Increased") |>
-  pull(Lipid) 
-
-low_1mM <- volcano |> 
-  filter(signif == "Decreased") |>
-  pull(Lipid)
-  
-high_5O <- volcano |> 
-  filter(signif == "Increased") |>
-  pull(Lipid) 
-
-low_5O <- volcano |> 
-  filter(signif == "Decreased") |>
-  pull(Lipid) 
-
-
-# Retrieve lipids significantly associated with systolic BP in the respective studies 
-
-alpha("green4",0.7)
-# Color scheme for Venn diagram
-myCol_fill <- c("#FC4E07B2", "#008B00B2")
-myCol_text <- c("#FC4E07", "green4")
-
-# Make venn diagram high
-v <-  venn.diagram(x = list(low_5O, low_1mM),
-             category.names = c("0.5 OsM", "0.5 OsM + 1mM GB"),   # title of each category in Venn diagram
-             main = "Lipids decreased with osmolarity", # plot title
-             compression = "lzw",        # image compression
-             fontfamily = "Arial",       # text font
-             col = myCol_fill, fill = alpha(myCol_fill, 0.7), # fill colors
-             cat.col = myCol_text,           # text colors
-             cat.fontface = "bold" , cat.cex = 1, # font face and size
-             cat.fontfamily = "Arial",            
-             filename = NULL, resolution = 600,   # image resolution
-             output = T)
-
-CairoPDF(file = "output/figures/Fig 3/volcano_low_comp.pdf")
-  grid.draw(v)
-dev.off()
-
-shared_high <- cbind(high_5O[!high_5O %in% high_1mM],
-                     high_1mM[!high_1mM %in% high_5O],
-                     high_5O[high_5O %in% high_1mM])
-
-shared_low <- cbind(low_5O[!low_5O %in% low_1mM],
-                     low_1mM[!low_1mM %in% low_5O],
-                     low_5O[low_5O %in% low_1mM])
-
-write_csv(data.frame(shared_low), file = "output/figures/Fig 3/volcano_low_comp.csv")
-```
-
-## Total lipid class
-
-PE, PG, and CL
-
-```{r}
+# Subset all PE lipids
 mdat <- mydata |>
   select(`Sample Number`, Condition,
-         `Total CL`, `Total PE`, `Total PG`)
-
-mdat <- mdat |>
-  pivot_longer(-c(`Sample Number`, Condition),
-               names_to = "Lipid",
-               values_to = "signal")
-
-mdat$Condition <- factor(mdat$Condition,
-                         levels = c("0.28 OsM", "0.5 OsM", "0.5 OsM + 1mM GB")
-                         )
-
-p0 <- ggbarplot(mdat, x = "Lipid", y = "signal", 
-            add = c("mean_sd", "dotplot"),
-            color = "Condition",
-            fill = "Condition", 
-            add.params = list(width = 0.35, 
-                              binwidth = .010*max(mdat$signal, na.rm = T)
-                              ),
-            alpha = 1.0,
-            position = position_dodge(0.8),
-            size = 0.5
-            ) +
-  scale_y_continuous(expand = c(0,0),
-                     limits = c(0, 1.35*max(mdat$signal)
-                                                 )
-                     ) +
-  scale_y_break(c(75, 125), scales = 1.5)
-
-p1 <- ggpar(p0, palette = mypal_new, 
-            legend.title = "Condition", 
-            title = "Total signal",  
-            xlab = "Lipid Class", ylab = "pmol lipid/1e8 cells") +
-  scale_color_manual(values = c("black", "black", "black")
-                     )
-
-
-stat.test <- mdat %>%
-  group_by(Lipid) %>%
-  na.omit() %>%
-  t_test(signal ~ Condition) %>%
-  adjust_pvalue(method = "none") %>%
-  add_significance("p")
-  
-stat.test$p.adj.signif <- stat.test$p.signif
-stat.test <- stat.test %>%
-  na.omit() %>%
-  add_xy_position(fun = "max", "Lipid",
-                  dodge = 0.8,
-                  step.increase = 0.075) 
-
-p2 <- p1 +
-  stat_pvalue_manual(
-    stat.test, 
-    label = "p.signif",
-    tip.length = 0.02, 
-    hide.ns = T
-    ) +
-  theme_bw(base_size = 14,
-           base_family = "sans",
-           base_line_size = 1
-           ) +
-  theme(axis.text = element_text(size = 12),
-        axis.line = element_line(linetype = 0),
-        legend.position = "bottom"
-        )
-p2
-
-ggsave(filename="output/figures/Fig 4/total_lipid_class.pdf", 
-       plot = p2, 
-       device = "pdf",
-       width = 14, height = 12,
-       units = "cm",
-       dpi = 600)
-
-
-```
-
-## Break down the acyl chain within class
-
-Total CL
-
-```{r}
-mdat <- mydata |>
-  select(`Sample Number`, Condition,
-         grep("CL", names(mydata))
+         grep("\\bPE\\b", names(lipid_data)
+              ), `Total PE`
          )
 
 mdat <- mdat |>
@@ -641,99 +478,10 @@ mdat <- mdat |>
                values_to = "signal")
 
 mdat$Condition <- factor(mdat$Condition,
-                         levels = c("0.28 OsM", "0.5 OsM", "0.5 OsM + 1mM GB")
+                         levels = c("0.28 OsM", "1.1 OsM", "1.1 OsM + 1mM GB")
                          )
 
-mdat <- mdat |>
-  group_by(`Sample Number`, Condition) |>
-  mutate(norm_signal = 100*signal/signal[Lipid == "Total CL"]) |>
-  ungroup()
-
-mdat <- mdat |>
-  filter(!Lipid == "Total CL")
-
-mdat$Lipid <- gsub("CL ", "", mdat$Lipid)
-
-p0 <- ggbarplot(mdat, x = "Lipid", y = "norm_signal", 
-            add = c("mean_sd", "dotplot"),
-            color = "Condition",
-            fill = "Condition", 
-            add.params = list(width = 0.35, 
-                              binwidth = .025*max(mdat$norm_signal, na.rm = T)
-                              ),
-            alpha = 1.0,
-            position = position_dodge(0.8),
-            size = 0.5
-            ) +
-  scale_y_continuous(expand = c(0,0),
-                     limits = c(0, 1.35*max(mdat$norm_signal)
-                                                 )
-                     )
-
-p1 <- ggpar(p0, palette = mypal_new, 
-            legend.title = "Condition", 
-            title = "Cardiolipin species contribution",  
-            xlab = "Lipid species", ylab = "% total CL signal") +
-  scale_color_manual(values = c("black", "black", "black")
-                     )
-
-
-stat.test <- mdat %>%
-  group_by(Lipid) %>%
-  na.omit() %>%
-  t_test(norm_signal ~ Condition) %>%
-  adjust_pvalue(method = "none") %>%
-  add_significance("p")
-  
-stat.test$p.adj.signif <- stat.test$p.signif
-stat.test <- stat.test %>%
-  na.omit() %>%
-  add_xy_position(fun = "max", "Lipid",
-                  dodge = 0.8,
-                  step.increase = 0.075) 
-
-p2 <- p1 +
-  stat_pvalue_manual(
-    stat.test, 
-    label = "p.signif",
-    tip.length = 0.02, 
-    hide.ns = T
-    ) +
-  theme_bw(base_size = 14,
-           base_family = "sans",
-           base_line_size = 1
-           ) +
-  theme(axis.text = element_text(size = 12),
-        axis.line = element_line(linetype = 0),
-        legend.position = "bottom"
-        )
-p2
-
-ggsave(filename="output/figures/Fig 4/CL_breakdown.pdf", 
-       plot = p2, 
-       device = "pdf",
-       width = 14, height = 12,
-       units = "cm",
-       dpi = 600)
-```
-
-Total PE
-
-```{r}
-mdat <- mydata |>
-  select(`Sample Number`, Condition,
-         grep("\\bPE\\b", names(mydata))
-         )
-
-mdat <- mdat |>
-  pivot_longer(-c(`Sample Number`, Condition),
-               names_to = "Lipid",
-               values_to = "signal")
-
-mdat$Condition <- factor(mdat$Condition,
-                         levels = c("0.28 OsM", "0.5 OsM", "0.5 OsM + 1mM GB")
-                         )
-
+# Calculate % contribution of each species to total PE
 mdat <- mdat |>
   group_by(`Sample Number`, Condition) |>
   mutate(norm_signal = 100*signal/signal[Lipid == "Total PE"]) |>
@@ -743,25 +491,31 @@ mdat <- mdat |>
   filter(!Lipid == "Total PE") |>
   drop_na()
 
+# Remove 'PE' in front of all species
 mdat$Lipid <- gsub("PE ", "", mdat$Lipid)
 
+# Calculate mean PE signal for each species
 mdat_sum <- mdat |>
   drop_na() |>
   group_by(Condition, Lipid) |>
   summarise(mean_PE = mean(norm_signal))
 
+# Calculate median lipid species signal of the calculated means for each group
 mdat_sum <- mdat_sum |>
   drop_na() |>
   group_by(Lipid) |>
   summarise(mean_PE_overall = median(mean_PE))
 
+# Identify PE species contributing less than 1% to total PE pool from median calculation
 low_PE <- mdat_sum |>
   filter(!mean_PE_overall < 1) |>
   pull(Lipid)
 
+# Filter out low PE species
 mdat <- mdat |>
   filter(Lipid %in% low_PE)
 
+# Plot species
 p0 <- ggbarplot(mdat, x = "Lipid", y = "norm_signal", 
             add = c("mean_sd", "dotplot"),
             color = "Condition",
@@ -785,7 +539,6 @@ p1 <- ggpar(p0, palette = mypal_new,
   scale_color_manual(values = c("black", "black", "black")
                      )
 
-
 stat.test <- mdat %>%
   group_by(Lipid) %>%
   na.omit() %>%
@@ -818,203 +571,98 @@ p2 <- p1 +
   scale_x_discrete(guide = guide_axis(angle = 45)) 
 p2
 
-ggsave(filename="output/figures/Fig 4/PE_breakdown.pdf", 
+ggsave(filename="output/PE_breakdown.pdf", 
        plot = p2, 
        device = "pdf",
        width = 14, height = 12,
        units = "cm",
        dpi = 600)
+
+rm(mdat, mdat_sum, p0, p1, p2, stat.test)
 ```
-
-Total PG
-
-```{r}
-mdat <- mydata |>
-  select(`Sample Number`, Condition,
-         grep("\\bPG\\b", names(mydata))
-         )
-
-mdat <- mdat |>
-  pivot_longer(-c(`Sample Number`, Condition),
-               names_to = "Lipid",
-               values_to = "signal")
-
-mdat$Condition <- factor(mdat$Condition,
-                         levels = c("0.28 OsM", "0.5 OsM", "0.5 OsM + 1mM GB")
-                         )
-
-mdat <- mdat |>
-  group_by(`Sample Number`, Condition) |>
-  mutate(norm_signal = 100*signal/signal[Lipid == "Total PG"]) |>
-  ungroup()
-
-mdat <- mdat |>
-  filter(!Lipid == "Total PG") |>
-  drop_na()
-
-mdat$Lipid <- gsub("PG ", "", mdat$Lipid)
-
-mdat_sum <- mdat |>
-  drop_na() |>
-  group_by(Condition, Lipid) |>
-  summarise(mean_PG = mean(norm_signal))
-
-mdat_sum <- mdat_sum |>
-  drop_na() |>
-  group_by(Lipid) |>
-  summarise(mean_PG_overall = median(mean_PG))
-
-low_PG <- mdat_sum |>
-  filter(!mean_PG_overall < 1) |>
-  pull(Lipid)
-
-mdat <- mdat |>
-  filter(Lipid %in% low_PG)
-
-p0 <- ggbarplot(mdat, x = "Lipid", y = "norm_signal", 
-            add = c("mean_sd", "dotplot"),
-            color = "Condition",
-            fill = "Condition", 
-            add.params = list(width = 0.35, 
-                              binwidth = .025*max(mdat$norm_signal, na.rm = T)
-                              ),
-            alpha = 1.0,
-            position = position_dodge(0.8),
-            size = 0.5
-            ) +
-  scale_y_continuous(expand = c(0,0),
-                     limits = c(0, 1.35*max(mdat$norm_signal)
-                                                 )
-                     )
-
-p1 <- ggpar(p0, palette = mypal_new, 
-            legend.title = "Condition", 
-            title = "Phosphatidylglycerol species contribution",  
-            xlab = "Lipid species", ylab = "% total PG signal") +
-  scale_color_manual(values = c("black", "black", "black")
-                     )
-
-
-stat.test <- mdat %>%
-  group_by(Lipid) %>%
-  na.omit() %>%
-  t_test(norm_signal ~ Condition) %>%
-  adjust_pvalue(method = "none") %>%
-  add_significance("p")
-  
-stat.test$p.adj.signif <- stat.test$p.signif
-stat.test <- stat.test %>%
-  na.omit() %>%
-  add_xy_position(fun = "max", "Lipid",
-                  dodge = 0.8,
-                  step.increase = 0.075) 
-
-p2 <- p1 +
-  stat_pvalue_manual(
-    stat.test, 
-    label = "p.signif",
-    tip.length = 0.02, 
-    hide.ns = T
-    ) +
-  theme_bw(base_size = 14,
-           base_family = "sans",
-           base_line_size = 1
-           ) +
-  theme(axis.text = element_text(size = 12),
-        axis.line = element_line(linetype = 0),
-        legend.position = "bottom"
-        ) +
-  scale_x_discrete(guide = guide_axis(angle = 45)) 
-p2
-
-ggsave(filename="output/figures/Fig 4/PG_breakdown.pdf", 
-       plot = p2, 
-       device = "pdf",
-       width = 14, height = 12,
-       units = "cm",
-       dpi = 600)
-```
-
-## Look at MSMS
 
 ## Acyl Chain Analysis
-
+Signal of various acyl chains to total acyl signal for a given lipid class. Example provided for PG lipids.
 ```{r}
-mydata1 <- lipid_data |>
-  filter(!`Sample Number` %in% c(3, 7, 11)
+# Edit below for all acyl chains of interest
+mdat <- lipid_data |>
+  select(`Sample Number`, Condition,
+         grep("12:0|14:0|14:1|15:0|15:1|16:0|16:1|17:0|17:1|18:0|18:1|18:2|19:0|19:1", 
+                         names(lipid_data), fixed = F)
          )
 
-mdat1 <- mydata1[,c(2, 5, 
-                    grep("12:0|14:0|14:1|15:0|15:1|16:0|16:1|17:0|17:1|18:0|18:1|18:2|19:0|19:1", 
-                         colnames(mydata1), fixed = F))] 
-
 # Filter out rows with mostly NA values
-mdat1 <- mdat1[!rowSums(is.na(mdat1)) > 2, ]
+mdat <- mdat[!rowSums(is.na(mdat)) > 2, ]
 
-mdat1[, 3:ncol(mdat1)][is.na(mdat1[, 3:ncol(mdat1)])]<- 0
+# Replace NA with 0
+mdat[, 3:ncol(mdat)][is.na(mdat[, 3:ncol(mdat)])]<- 0
 
-mdat1 <- mdat1 |> select(`Sample Number`, Condition,
-                         grep("\\bPG\\b", names(mdat1)))
+# Subset out target lipid class. Here, it is PG
+mdat1 <- mdat |>
+  select(`Sample Number`, Condition,
+         grep("\\bPG\\b", names(mdat)
+              )
+         )
 
-mdat2 <- reshape2::melt(mdat1, id = c("Sample Number", "Condition"))
+mdat2 <- mdat1 |>
+  pivot_longer(-c(`Sample Number`, Condition),
+               names_to = "variable")
 
+# Edit lipid names
 mdat2$variable1 <- gsub(".*\\ ", "", mdat2$variable)   # Removes anything from start until the space (after \\)
 
+# Split names to separate acyl chains into separate columns
 mdat2_FA <- str_split_fixed(mdat2$variable1, "_", 4)
 mdat3 <- cbind(mdat2, mdat2_FA)
 mdat3$`3` <-  ifelse(mdat3$`3` == "2", "", mdat3$`3`)
 
 mdat3$variable <- gsub(" .*", "", mdat3$variable)
 
+# Expand into separate data frames
 mdat3_FA1 <- mdat3[,1:6]
 mdat3_FA2 <- mdat3[,c(1:5,7)]
 mdat3_FA3 <- mdat3[,c(1:5,8)]
 mdat3_FA4 <- mdat3[,c(1:5,9)]
 
+# Rename column with FA information
 names(mdat3_FA1)[6] <- "FA"
 names(mdat3_FA2)[6] <- "FA"
 names(mdat3_FA3)[6] <- "FA"
 names(mdat3_FA4)[6] <- "FA"
 
+# Prepare for re-merging
 mdat3_FA1$FA <- gsub("/0:0", "", mdat3_FA1$FA)
 
-# This is the dataset to use
+# Create dataset with FA data combined
 mdat4 <- rbind(mdat3_FA1, mdat3_FA2, mdat3_FA3, mdat3_FA4)
 
 # Sum up acyl chain values
-mdat5 <- aggregate(mdat4$value, by=list(id = mdat4$`Sample Number`, Condition = mdat4$Condition, 
-                                        #lipid = mdat4$variable, 
-                                        FA=mdat4$FA), FUN=sum)
+mdat5 <- aggregate(mdat4$value, by=list(id = mdat4$`Sample Number`,
+                                        Condition = mdat4$Condition,
+                                        FA=mdat4$FA),
+                   FUN=sum)
 
+# Remove empty rows
 mdat5 <- mdat5[!mdat5$FA == "",]
 
-# High abundance chains: 16:0, 16:1, 17:1, 18:1
-#chains <- c("16:0", "16:1", "17:1", "18:1", "19:1")
-
-#mdat6 <- mdat5[mdat5$FA %in% chains,]
-
-# Medium abundance chains: 14:0 15:0, 18:0, 19:1
-#chains <- c("14:0", "15:0", "18:0", "19:1")
-
-#mdat6 <- mdat5[mdat5$FA %in% chains,]
-
-
-# Low abundance chains: 12:0, 14:1, 15:1, 18:2
-#chains <- c("12:0", "14:0", "15:0","14:1", "15:1", "18:0", "18:2")
+# Calculate the % contribution of acyl chains relative to total amount
 names(mdat5)[4] <- "value"
 mdat6 <- mdat5 |> 
   group_by(id) |>
   mutate(norm_signal = 100*value/sum(value)
          )
 
-chains_rm <- c("12:0", "14:1")
+# Edit chains to plot as needed
+chains_rm <- c("12:0", "14:1")  # Because they were extremely low abundance
 mdat6 <- mdat6[!mdat6$FA %in% chains_rm,]
+
+# Low abundance chains
 chains_low <- c("14:0", "15:0", "17:0", "18:0", "18:2", "19:1") # 18:2 for PG not PE
-mdat6 <- mdat6[mdat6$FA %in% chains_low,]
 
+# Add a '!' after the first bracket to exclude low abundance chains
+mdat6 <- mdat6[mdat6$FA %in% chains_low,] 
 
-# Plot
-
+# Plot low abundance chains
 p0 <- ggbarplot(mdat6, x = "FA", y = "norm_signal", 
             add = c("mean_sd", "dotplot"), color = "Condition", fill = "Condition", 
             add.params = list(width = 0.35, 
@@ -1068,133 +716,14 @@ p2 <- p1 + stat_pvalue_manual(
 p2
 
 
-ggsave(filename="output/figures/Fig 5/PG_acyl_low.pdf", 
+ggsave(filename="output/PG_acyl_low.pdf", 
        plot = p2, 
        device = "pdf",
        width = 14, height = 12,
        units = "cm",
        dpi = 600)
+
+rm(list=setdiff(ls(), c("lipid_data", "mydata"))
+   )
 ```
 
-## Metabolomics
-
-```{r}
-library(readxl)
-
-sample_info <- read_xlsx("201222_DMPOsmoticSamples.xlsx")
-mydata <- read_xlsx("Final Report/2022_0620_Record_metabolomics_data.xlsx")
-
-# Ensure that the sample ID containing column is renamed to 'Name' to match Y7
-colnames(sample_info)[3] <- "Name"
-colnames(mydata)[1] <- "Name"
-
-# Check for any other sample id discrepancies
-
-final_met <- merge(sample_info, mydata, by = "Name")
-
-final_met <- final_met %>% filter(Name != "5C1")
-final_met <- final_met %>% filter(Name != "PB")
-
-final_met <- final_met %>% filter(!Name %in% c("PB", "5C1"))
-
-# Tried normalizing to sum of all signals but not worth it without total TIC
-#final_met[final_met == 0] <- NA
-#final_met[,11:18] <- final_met[,11:18]/rowSums(final_met[,11:18], na.rm = T)
-```
-
-Bar Graphs
-
-```{r}
-mydata1 <- final_met[,c(5, 10:18)]
-
-mydata1$Condition <- factor(mydata1$Condition, levels = c("0.28 OsM", "0.5 OsM", "0.5 OsM + 1mM GB"))
-mdat1 <- reshape2::melt(mydata1, id="Condition")
-colnames(mdat1)[2] <- "Metabolite"
-
-mets <- levels(mdat1$Metabolite)
-plot_list <- list()
-for (i in mets){
-  mdat2 <- mdat1[mdat1$Metabolite == i,]
-  mdat2 <- droplevels(mdat2)
-  mdat2$value <- mdat2$value/mean(mdat2[mdat2$Condition == "0.28 OsM",]$value)
-  p0 <- ggbarplot(mdat2, x = "Condition", y = "value", 
-            add = c("mean_se", "dotplot"), color = "Condition", fill = "Condition", 
-            add.params = list(width = 0.35, 
-                              binwidth = .025*max(mdat2$value, na.rm = T)),
-            alpha = 0.5, position = position_dodge(0.8), size = 0.5) + 
-            scale_y_continuous(expand = c(0,0), limits = c(0, 1.90*max(mdat2$value))) +
-            theme_bw(base_size = 16, base_family = "Arial") + 
-            theme(axis.text.x = element_text(angle = 0, vjust = 0, hjust=0.5))
-
-  p1 <- ggpar(p0, palette = mypal_bar, legend = "right", legend.title = "Condition", 
-                title = paste0(i),  
-                xlab = "", ylab = "Normalized Counts") 
-  p0
-  
-  library(rstatix)
-  stat.test <- mdat2 %>%
-  na.omit() %>%
-  t_test(value ~ Condition) %>%
-  adjust_pvalue(method = "none") %>%
-  add_significance("p")
-    
-  stat.test$p.adj.signif <- stat.test$p.signif
-  stat.test <- stat.test %>%
-                    na.omit() %>%
-                    add_xy_position(fun = "max", "Condition", dodge = 0.8,
-                                    step.increase = 0.2) 
-  stat.test$y.position <- stat.test$y.position*0.98
-  
-  p2 <- p1 + stat_pvalue_manual(
-        stat.test, label = "p", tip.length = 0.02, hide.ns = F)
-  plot_list[[which(mets == i)]] <- p2
-}
-
-CairoPDF(file = "Final Report/output/figures/Metabolites.pdf", 
-               height = 8, width = 8)
-  for (j in 1:length(mets)){
-          print(plot_list[[j]])
-  }
-dev.off()
-```
-
-PCA
-
-```{r}
-mdat <- met_data |>
-  select(Name, Condition, 5:ncol(met_data)
-         ) |>
-  filter(!Name %in% c(8))
-
-mdat <- mdat[,colSums(is.na(mdat)) < 4]
-mdat[is.na(mdat)] <- 0
-
-res.pca <- prcomp(mdat[,-c(1,2)],
-             center = TRUE,
-            scale. = TRUE)
-attributes(res.pca)
-
-print(res.pca)
-fviz_eig(res.pca)
-p0 <- fviz_pca_ind(res.pca,
-                   col.ind = mdat$Condition,
-                   palette = c("#00AFBB",  "#FC4E07", "green4"),
-                   addEllipses = TRUE, 
-                   ellipse.type = "confidence",
-                   legend.title = "Condition",
-                   repel = TRUE
-                   ) +
-  ggtitle("Principal Component Analysis") +
-  xlab("PC 1 (47.7%)") +
-  ylab("PC 2 (18.4%)") +
-  theme_bw(base_size = 14,
-           base_family = "sans",
-           base_line_size = 1) +
-  theme(axis.text = element_text(size = 12),
-        axis.line = element_line(linetype = 0),
-        legend.position = "bottom"
-        )
-
-p0
-
-```
