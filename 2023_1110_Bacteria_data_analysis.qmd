@@ -120,7 +120,7 @@ mdat <- mydata |>
 
 # Make Condition a factor and set order
 mdat$Condition <- factor(mdat$Condition, 
-                            levels = c("0.28 OsM", "1.1 OsM", "1.1 OsM + 1mM GB")
+                            levels = c("0.28 OsM", "1.02 OsM", "1.02 OsM + 1mM GB")
                             )
 
 # Make data long
@@ -211,7 +211,7 @@ mdat <- mydata |>
          `Total CL`:`Total Lipid`)
 
 mdat$Condition <- factor(mdat$Condition,
-                            levels = c("0.28 OsM", "1.1 OsM", "1.1 OsM + 1mM GB")
+                            levels = c("0.28 OsM", "1.02 OsM", "1.02 OsM + 1mM GB")
                             )
 
 mdat2 <- mdat |>
@@ -346,14 +346,14 @@ Z <- Z |>
 
 # Select Conditions to compare
 Z <- Z |>
-  filter(Condition %in% c("0.28 OsM", "1.1 OsM + 1mM GB")  # Change to 1.1 OsM for other volcano plot
+  filter(Condition %in% c("0.28 OsM", "1.02 OsM + 1mM GB")  # Change to 1.1 OsM for other volcano plot
          )
 
 # Calculate fold changes; edit summarise function to select correct Conditions
 volcano <- Z |> 
   drop_na() |>
   group_by(Lipid) |>      # retain factor
-  summarise(FC = mean(signal[Condition == "1.1 OsM + 1mM GB"])/mean(signal[Condition == "0.28 OsM"])
+  summarise(FC = mean(signal[Condition == "1.02 OsM + 1mM GB"])/mean(signal[Condition == "0.28 OsM"])
             ) |>
   ungroup()
 
@@ -423,7 +423,7 @@ p0 <- volcano |>
                                       "PG", "TG")
                      ) +                                         # desired name in legend
   ggtitle("High vs. Normal") +
-  xlab("log2(Fold change [1.1 OsM + 1mM GB/0.28 OsM])") +        # Edit based on groups
+  xlab("log2(Fold change [1.02 OsM + 1mM GB/0.28 OsM])") +        # Edit based on groups
   ylab("-log10(p-value)") +
   theme_bw(base_size = 14,
            base_family = "sans",
@@ -482,7 +482,7 @@ mdat <- mdat |>
                values_to = "signal")
 
 mdat$Condition <- factor(mdat$Condition,
-                         levels = c("0.28 OsM", "1.1 OsM", "1.1 OsM + 1mM GB")
+                         levels = c("0.28 OsM", "1.02 OsM", "1.02 OsM + 1mM GB")
                          )
 
 # Calculate % contribution of each species to total PE
