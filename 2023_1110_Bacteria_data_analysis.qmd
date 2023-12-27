@@ -19,6 +19,8 @@ if(!require(ggpubr)){install.packages("ggpubr")}
 if(!require(rstatix)){install.packages("rstatix")}
 if(!require(ggbreak)){install.packages("ggbreak")}
 if(!require(factoextra)){install.packages("factoextra")}
+if(!require(VennDiagram)){install.packages("VennDiagram")}
+if(!require(rowr)){install.packages("rowr")}
 
 # Load data
 lipid_data <- read_csv("lipidomics_data.csv")
@@ -252,7 +254,7 @@ mdat2$Class <- ifelse(mdat2$Class == "Total CL",
 stat.test <- mdat2 %>%
   group_by(Lipid) %>%
   na.omit() %>%
-  t_test(value ~ Condition) %>%
+  t_test(norm_val ~ Condition) %>%
   adjust_pvalue(method = "none") %>%
   add_significance("p")
 
@@ -332,9 +334,17 @@ rm(mdat, mdat2, stat.test, error_bars)
 
 ## Volcano plots
 
+Percent composition
+
 ```{r}
-# Working dataset
-Z <- lipid_data
+mydata_comp <- lipid_data
+mydata_comp$`Total Lipid` <- rowSums(mydata_comp[,3:ncol(mydata_comp)], na.rm = T)
+
+mydata_comp[,3:ncol(mydata_comp)] <-
+  mydata_comp[,3:ncol(mydata_comp)]/mydata_comp$`Total Lipid`
+
+Z <- mydata_comp |>
+  select(!`Total Lipid`)
 
 # Change all 0 values to NA
 Z[Z==0] <- NA
@@ -344,9 +354,8 @@ Z <- Z |>
                names_to = "Lipid",
                values_to = "signal")
 
-# Select Conditions to compare
 Z <- Z |>
-  filter(Condition %in% c("0.28 OsM", "1.02 OsM + 1mM GB")  # Change to 1.1 OsM for other volcano plot
+  filter(Condition %in% c("1.02 OsM + 1mM GB", "0.28 OsM")  # Change to desired groups
          )
 
 # Calculate fold changes; edit summarise function to select correct Conditions
@@ -387,6 +396,7 @@ volcano$delabel <- ifelse(volcano$signif != "p>0.051",
 
 # Reduce names to represent lipid classes
 volcano$delabel <- gsub(" .*","", volcano$delabel)
+volcano$delabel <- gsub("\\bFAHFA\\b","FA", volcano$delabel)
 volcano$delabel <- factor(volcano$delabel)
 
 # Transform fold change for plotting
@@ -400,29 +410,35 @@ p0 <- volcano |>
              )
          ) +
   geom_point() +
-  scale_y_continuous(limits = c(0, max(volcano$log10_p)*1.25),
+  scale_y_continuous(limits = c(0, 8),
                      expand = c(0.01,0)
                      ) +
-  scale_x_continuous(limits = c(min(volcano$FC)*1.5, 
-                                max(volcano$FC)*1.5)
+  scale_x_continuous(limits = c(-5, 6)
                      ) +
+  geom_vline(xintercept = 0,
+             linetype = "dashed",
+             linewidth = 0.5) +
   geom_hline(yintercept = 1.301,            # dashed line for p=0.05
              linetype = "dashed",
              linewidth = 0.5
              ) +
   annotate("text", label = "p=0.05",
-           x = 1.05*max(volcano$FC), 
-           y = 1.15,                         # text label for line signifying p-value = 0.05
+           x = 6, 
+           y = 1.0,                         # text label for line signifying p-value = 0.05
            size = 2.5,      
            vjust = -0.25,
            colour = "black") +
-  scale_color_manual(values=mypal_bar[c(4, 2, 7, 6, 3, 5, 8)], 
+  scale_color_manual(values=c(mypal_bar[c(4, 5, 7, 9)],
+                              "magenta", "black", 
+                              mypal_bar[c(2, 3, 1, 6, 8)]
+                              ), 
                            name = "Lipid Class",                 # legend title
-                           breaks = c("CL", "DG", "HBMP", 
-                                     "PA", "PE", 
-                                      "PG", "TG")
+                           breaks = c("CL", "DG", "FA",  
+                                      "HBMP", "LPC", "LPE",
+                                      "PA", "PE", "PG",
+                                      "PMeOH", "TG")
                      ) +                                         # desired name in legend
-  ggtitle("High vs. Normal") +
+  ggtitle("Effect of high salt and GB") +
   xlab("log2(Fold change [1.02 OsM + 1mM GB/0.28 OsM])") +        # Edit based on groups
   ylab("-log10(p-value)") +
   theme_bw(base_size = 14,
@@ -435,33 +451,251 @@ p0 <- volcano |>
         )
 p0
 
-
-ggsave(filename="output/volcano_high_GB.pdf", 
+ggsave(filename="output/volcano_salt_GB_effect.pdf", 
        plot = p0, 
        device = "pdf",
        width = 14, height = 16,
        units = "cm",
        dpi = 600)
 
-write_csv(volcano, file = "output/volcano_high_GB.csv")
+write_csv(volcano, file = "output/volcano_salt_GB_effect.csv")
 
-# Use the below code in the scale_color_manual depending on groups being plotted
-# This allows for lipid class shading to be similar between plots
-########## For 1.1 volcano ##########
-#values=mypal_bar[c(4, 2, 6, 7, 8, 3, 5, 1)], 
-#                           name = "Lipid Class",                  
-#                           breaks = c("CL", "DG", "FA", 
-#                                      "HBMP", "PC", "PE", 
-#                                      "PG", "PMeOH")
 
-######### For 1.1mM + 1mM GB ########
-#values=mypal_bar[c(4, 2, 7, 6, 3, 5, 8)], 
-#                           name = "Lipid Class",                   
-#                           breaks = c("CL", "DG", "HBMP", 
-#                                      "PA", "PE", 
-#                                      "PG", "TG")
+rm(list=setdiff(ls(), c("lipid_data", "mydata", "mydata_comp",
+                        "mypal_bar", "mypal_new")
+                )
+   )
+```
 
-rm(Z, stat.test, volcano, p0)
+## Species altered by class dependent on GB
+
+```{r}
+volcano <- read_csv(file = "output/volcano_GB_effect_comp.csv")
+
+volcano <- volcano |> 
+  filter(!signif == "p>0.051") 
+
+volcano <- volcano |>
+  select(signif, delabel)
+
+volcano <- volcano %>%
+  mutate(across(where(is.character), as.factor)
+         )
+
+volcano <- volcano |>
+  add_column(num = 1)
+
+mdat <- volcano |>
+  group_by(signif, delabel, .drop = FALSE) |>
+  summarise(count=sum(num))
+
+
+p0 <- ggbarplot(mdat, x = "delabel", y = "count",
+            color = "signif",
+            fill = "signif", 
+            alpha = 1.0,
+            position = position_dodge(0.8),
+            size = 0.5
+            ) +
+  scale_y_continuous(expand = c(0,0),
+                     limits = c(0, 25)
+                     )
+p1 <- ggpar(p0, palette = mypal_new[2:3], 
+            legend.title = "Condition", 
+            title = "Lipid changes due to GB",  
+            xlab = "Lipid Class", ylab = "Number of lipid species") +
+  scale_color_manual(values = c("black", "black")
+                     )
+  
+p2 <- p1 +
+  theme_bw(base_size = 14,
+           base_family = "sans",
+           base_line_size = 1
+           ) +
+  theme(axis.text = element_text(size = 12),
+        axis.line = element_line(linetype = 0),
+        legend.position = "bottom"
+        ) +
+  coord_flip()
+p2
+
+ggsave(filename="output/GB_effect_Counts.pdf", 
+       plot = p2, 
+       device = "pdf",
+       width = 12, height = 14,
+       units = "cm",
+       dpi = 600)
+
+rm(list=setdiff(ls(), c("lipid_data", "mydata", "mydata_comp",
+                        "mypal_bar", "mypal_new")
+                )
+   )
+```
+
+## Venn Diagrams
+
+```{r}
+# Load volcano plot results
+high_OsM <- read_csv(file = "output/volcano_salt_effect.csv")
+high_GB <- read_csv(file = "output/volcano_salt_GB_effect.csv")
+
+# Obtain lipid names of significantly different lipids in each comparison
+high_102 <- high_OsM |> 
+  filter(signif == "Increased") |>
+  pull(Lipid) 
+
+low_102 <- high_OsM |> 
+  filter(signif == "Decreased") |>
+  pull(Lipid) 
+  
+high_1mM <- high_GB |> 
+  filter(signif == "Increased") |>
+  pull(Lipid) 
+
+low_1mM <- high_GB |> 
+  filter(signif == "Decreased") |>
+  pull(Lipid)
+  
+# Color scheme for Venn diagram
+myCol_fill <- c("#FC4E07B2", "#008B00B2")   # alpha=0.7 of normal colors
+myCol_text <- c("#FC4E07", "green4")
+
+# Make venn diagram high and low
+v <-  venn.diagram(x = list(high_102, high_1mM),
+             category.names = c("1.02 OsM", "1.02 OsM + 1mM GB"), 
+             main = "Lipids increased with osmolarity", # plot title
+             compression = "lzw",        # image compression
+             fontfamily = "Arial",       # text font
+             col = myCol_fill, 
+             fill = alpha(myCol_fill, 0.7), # fill colors
+             cat.col = myCol_text,           # text colors
+             cat.fontface = "bold" , cat.cex = 1, # font face and size
+             cat.fontfamily = "Arial",            
+             filename = NULL, resolution = 600,   # image resolution
+             output = T)
+
+CairoPDF(file = "output/volcano_high_venn.pdf")
+  grid.draw(v)
+dev.off()
+
+# Obtain lipids in each portion of venn diagram
+shared_high <- qpcR:::cbind.na(high_102[!high_102 %in% high_1mM], # increased in 1.02 OsM only
+                               high_1mM[!high_1mM %in% high_102], # increased in 1mM GB only
+                               high_102[high_102 %in% high_1mM])  # increased in both
+
+colnames(shared_high) <- c("102_high", "1mM_high", "both")
+
+shared_low <- qpcR:::cbind.na(low_102[!low_102 %in% low_1mM],
+                              low_1mM[!low_1mM %in% low_102],
+                              low_102[low_102 %in% low_1mM])
+colnames(shared_low) <- c("102_low", "1mM_low", "both")
+
+write_csv(data.frame(shared_high), file = "output/volcano_high_venn.csv")
+
+rm(list=setdiff(ls(), c("lipid_data", "mydata", "mydata_comp",
+                        "mypal_bar", "mypal_new")
+                )
+   )
+```
+
+## Plot shared species % composition
+
+```{r}
+Z <- mydata_comp |>
+  select(!`Total Lipid`)
+
+shared_high <- read_csv(file = "output/volcano_high_venn.csv")
+shared_low <- read_csv(file = "output/volcano_low_venn.csv")
+
+shared_high <- na.omit(shared_high$both)
+shared_low <- na.omit(shared_low$both)
+
+Z1 <- Z |>
+  select(`Sample Number`, Condition,
+         all_of(shared_high)
+         )
+
+Z2 <- Z |>
+  select(`Sample Number`, Condition,
+         all_of(shared_low)
+         )
+
+# Change Z1 for high, Z2 for low
+mdat <- Z1 |>
+  pivot_longer(-c(`Sample Number`, Condition),
+               names_to = "Lipid",
+               values_to = "signal")
+
+mdat$Condition <- factor(mdat$Condition,
+                         levels = c("0.28 OsM", "1.02 OsM", "1.02 OsM + 1mM GB")
+                         )
+
+p0 <- ggbarplot(mdat, x = "Lipid", y = "signal", 
+            add = c("mean_sd", "dotplot"),
+            color = "Condition",
+            fill = "Condition", 
+            add.params = list(width = 0.35, 
+                              binwidth = .025*max(mdat$signal, na.rm = T)
+                              ),
+            alpha = 1.0,
+            position = position_dodge(0.8),
+            size = 0.5
+            ) +
+  scale_y_continuous(expand = c(0,0),
+                     limits = c(0, 1.35*max(mdat$signal)
+                                                 )
+                     )
+
+p1 <- ggpar(p0, palette = mypal_new, 
+            legend.title = "Condition", 
+            title = "Species increased",  
+            xlab = "Lipid species", ylab = "% total lipids") +
+  scale_color_manual(values = c("black", "black", "black")
+                     )
+
+stat.test <- mdat %>%
+  group_by(Lipid) %>%
+  na.omit() %>%
+  t_test(signal ~ Condition) %>%
+  adjust_pvalue(method = "none") %>%
+  add_significance("p")
+  
+stat.test$p.adj.signif <- stat.test$p.signif
+stat.test <- stat.test %>%
+  na.omit() %>%
+  add_xy_position(fun = "max", "Lipid",
+                  dodge = 0.8,
+                  step.increase = 0.075) 
+
+p2 <- p1 +
+  stat_pvalue_manual(
+    stat.test, 
+    label = "p.signif",
+    tip.length = 0.02, 
+    hide.ns = T
+    ) +
+  theme_bw(base_size = 14,
+           base_family = "sans",
+           base_line_size = 1
+           ) +
+  theme(axis.text = element_text(size = 12),
+        axis.line = element_line(linetype = 0),
+        legend.position = "bottom"
+        ) +
+  scale_x_discrete(guide = guide_axis(angle = 45)) 
+p2
+
+ggsave(filename="output/volcano_increased_common.pdf", 
+       plot = p2, 
+       device = "pdf",
+       width = 14, height = 12,
+       units = "cm",
+       dpi = 600)
+
+rm(list=setdiff(ls(), c("lipid_data", "mydata", "mydata_comp",
+                        "mypal_bar", "mypal_new")
+                )
+   )
 ```
 
 ## Plot lipid species within class
@@ -729,7 +963,8 @@ ggsave(filename="output/PG_acyl_low.pdf",
        units = "cm",
        dpi = 600)
 
-rm(list=setdiff(ls(), c("lipid_data", "mydata"))
+rm(list=setdiff(ls(), c("lipid_data", "mydata")
+                )
    )
 ```
 
